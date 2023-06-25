@@ -5,75 +5,32 @@ import zio.*
 import zio.Console.printLine
 import NeoEnrichment.*
 
-class ResolutionPersistenceService(dataService: DataService, graphDb: GraphDatabaseService):
-  def getTopLevel(soughtDep: String): Task[Set[String]] =
-    DependencyResolver.resolve(soughtDep).map { resolution =>
-      resolution.topLevel.map(_.toString)
-    }
+class ResolutionPersistenceService(dataService: PersistenceService):
+  def getTopLevelModules(soughtDep: String): Task[Set[VersionedModule]] =
+    DependencyResolver.resolve(soughtDep).map { _.topLevelModules }
 
-  def getTransitives(soughtDep: String): Task[Seq[String]] =
-    DependencyResolver.resolve(soughtDep).map { resolution =>
-      resolution.transitives.distinct.map(_.toString)
-    }
+  def getTransitiveModules(soughtDep: String): Task[Set[VersionedModule]] =
+    DependencyResolver.resolve(soughtDep).map { _.transitiveModules }
 
-  def getParentage(soughtDep: String): Task[Set[RichParentage]] =
-    DependencyResolver.resolve(soughtDep).map { resolution =>
-      resolution.parentage
-    }
+  def getParentageAdjacency(soughtDep: String): Task[Set[ParentAdjacency]] =
+    DependencyResolver.resolve(soughtDep).map { _.parentageAdjacencySet }
 
-  def getRelations(soughtDep: String): Task[Set[RichDependsOn]] =
-    DependencyResolver.resolve(soughtDep).map { resolution =>
-      resolution.relations
-    }
+  def getDependencyAdjacency(soughtDep: String): Task[Set[DependsAdjacency]] =
+    DependencyResolver.resolve(soughtDep).map { _.dependencyAdjacencySet }
 
-  def resolveAndPersist(soughtDep: String, debug: Boolean): Task[Unit] =
+  def resolveAndPersist(soughtDep: String): Task[Set[Persisted[VersionedModule]]] =
     for {
       resolution <- DependencyResolver.resolve(soughtDep)
-      _ <- resolution.transitives.distinct.foldLeft(ZIO.unit: Task[Unit]) { case (io, dep) =>
-        io *>
-          dataService.upsertOrg(dep.organisation) *>
-          dataService.upsertDependency(dep).flatMap(dep => if debug then printLine(dep) else ZIO.unit) *>
-          graphDb.simpleInsert(
-            "Dependency",
-            Map(
-              "org" -> dep.orgName,
-              "name" -> dep.moduleName,
-              "version" -> dep.version
-            )
-          ).unit
-      }
-      _ <- resolution.parentage.foldLeft(ZIO.unit: Task[Unit]) { case (io, rp) =>
-        for {
-          _ <- io
-          _ <- dataService.upsertOrg(rp.child.organisation)
-          _ <- dataService.upsertOrg(rp.parent.organisation)
-          child <- dataService.upsertDependency(rp.child)
-          parent <- dataService.upsertDependency(rp.parent)
-          _ <- dataService.upsertParentage(Parentage(child.id, parent.id))
-          text =
-            if rp.child.orgName.contains("tech.stage")
-            then fansi.Bold.On(rp.toString)
-            else rp.toString
-          _ <- if debug then printLine(text) else ZIO.unit
-        } yield ()
-      }
-      _ <- resolution.relations.foldLeft(ZIO.unit: Task[Unit]) { case (io, rel) =>
-        for {
-          _ <- io
-          _ <- printLine(rel)
-          _ <- dataService.upsertOrg(rel.from.organisation)
-          _ <- dataService.upsertOrg(rel.to.organisation)
-          from <- dataService.upsertDependency(rel.from)
-          to <- dataService.upsertDependency(rel.to)
-          _ <- dataService.upsertDependsOn(DependsOn(from.id, to.id))
-          text =
-            if rel.from.orgName.contains("tech.stage")
-            then fansi.Bold.On(rel.toString)
-            else rel.toString
-          _ <- if debug then printLine(text) else ZIO.unit
-        } yield ()
-      }
-    } yield ()
+      persistedModules <- dataService.bulkUpsert(resolution.allKnownModules.toSeq)
+      persistedDeps <- dataService.bulkUpsertRelationships(
+        resolution.dependencyAdjacencySet.toSeq.map(da => da.from -> da.to),
+        Rel.DEPENDS_ON
+      )
+      persistedParents <- dataService.bulkUpsertRelationships(
+        resolution.parentageAdjacencySet.toSeq.map(pa => pa.child -> pa.parent),
+        Rel.CHILD_OF
+      )
+    } yield persistedModules.toSet
 
 object ResolutionPersistenceService:
-  val live = ZLayer.fromFunction(new ResolutionPersistenceService(_, _))
+  val live = ZLayer.fromFunction(new ResolutionPersistenceService(_))

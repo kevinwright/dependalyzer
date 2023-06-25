@@ -21,7 +21,7 @@ class S3HandlerInstance extends URLStreamHandler {
       override def getInputStream: InputStream = {
         getClient.map { s3Client =>
           val bucketName = urlToOpen.getHost
-          val key = urlToOpen.getPath.tail //drop the leading /
+          val key = urlToOpen.getPath.tail // drop the leading /
 
           try {
             val gor = GetObjectRequest.builder().bucket(bucketName).key(key).build()
@@ -55,6 +55,6 @@ class S3HandlerInstance extends URLStreamHandler {
 object S3HandlerFactory extends URLStreamHandlerFactory {
   def createURLStreamHandler(protocol: String): URLStreamHandler = protocol match {
     case "s3" => new S3HandlerInstance()
-    case _ => null
+    case _    => null
   }
 }

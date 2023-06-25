@@ -11,7 +11,7 @@ import java.nio.file.Path
 
 object EmbeddedNeoService:
   private val homeDir: Path = Path.of(java.lang.System.getProperty("user.home"))
-  private val dbPath: Path = homeDir.resolve("dependalyzer")
+  private val dbPath: Path = homeDir.resolve("neo_dependalyzer")
   val dbName = "neo4j" // only the default is allowed
 
   private def initialize: Task[DatabaseManagementService] =
@@ -20,6 +20,7 @@ object EmbeddedNeoService:
         .setConfig(BoltConnector.enabled, true)
         .setConfig(BoltConnector.listen_address, new SocketAddress("localhost", 9669))
         .build()
+//        .setConfig(BoltConnector.encryption_level, BoltConnector.EncryptionLevel.OPTIONAL)
     )
 
   private def openDefaultDb(dbms: DatabaseManagementService): Task[GraphDatabaseService] =

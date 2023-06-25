@@ -4,66 +4,78 @@ import zio.*
 import zio.http.*
 import org.neo4j.graphdb.GraphDatabaseService
 
+import zio.http.Server
+import zio.stream.ZStream
+import java.io.File
+import java.nio.file.Paths
+
 object WebMain extends ZIOAppDefault:
 
   val soughtDep =
     "tech.stage:stage-spark-utils@20230621.234928.f21e9ef-direct-conversions-SNAPSHOT"
 
-  def errToResponse(e: Throwable): ZIO[Any, Response, Response] =
-    ZIO.succeed(Response.text(e.toString).withStatus(Status.InternalServerError))
+  def exceptionToResponse(e: Throwable): Response =
+    Response.text(e.toString).withStatus(Status.InternalServerError)
 
-  def exposeErrors[R](x: ZIO[R, Throwable, Response]): ZIO[R, Response, Response] =
-    x.catchAll(errToResponse)
+  val DynamicRoot = Root / "dynamic"
 
-  val app: App[ResolutionPersistenceService with GraphDatabaseService] =
-    Http.collectZIO[Request] {
-      case Method.GET -> Root / "text" =>
-        ZIO.service[GraphDatabaseService].map { db =>
-          Response.text(db.databaseName() + " available = " + db.isAvailable)
-        }
-      case Method.GET -> Root / "debugTopLevel" =>
-        exposeErrors {
+  val dynamic: App[ResolutionPersistenceService with GraphDatabaseService] =
+    Http
+      .collectZIO[Request] {
+        case Method.GET -> DynamicRoot / "text" =>
+          ZIO.service[GraphDatabaseService].map { db =>
+            Response.text(db.databaseName() + " available = " + db.isAvailable)
+          }
+        case Method.GET -> DynamicRoot / "debugTopLevel" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getTopLevel(soughtDep)
+            entries <- rps.getTopLevelModules(soughtDep)
           } yield Response.text(entries.mkString("\n"))
-        }
-      case Method.GET -> Root / "debugTransitives" =>
-        exposeErrors {
+        case Method.GET -> DynamicRoot / "debugTransitives" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getTransitives(soughtDep)
+            entries <- rps.getTransitiveModules(soughtDep)
           } yield Response.text(entries.mkString("\n"))
-        }
-      case Method.GET -> Root / "debugParentage" =>
-        exposeErrors {
+        case Method.GET -> DynamicRoot / "debugParentage" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getParentage(soughtDep)
+            entries <- rps.getParentageAdjacency(soughtDep)
           } yield Response.text(entries.map(_.toString).mkString("\n"))
-        }
-      case Method.GET -> Root / "debugDependsOn" =>
-        exposeErrors {
+        case Method.GET -> DynamicRoot / "debugDependsOn" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getRelations(soughtDep)
+            entries <- rps.getDependencyAdjacency(soughtDep)
           } yield Response.text(entries.map(_.toString).mkString("\n"))
-        }
-      case Method.GET -> Root / "populate" =>
-        exposeErrors {
+        case Method.GET -> DynamicRoot / "populate" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            _ <- rps.resolveAndPersist(soughtDep, debug = true)
-          } yield Response.text("Dependency Persisted")
-        }
-    }
+            _ <- rps.resolveAndPersist(soughtDep)
+          } yield Response.text("Dependencies Persisted")
+      }
+      .mapError(exceptionToResponse)
+
+  def serveStaticFile(subPath: String) = {
+    val pathStr = s"src/main/resources/web-static/$subPath"
+    val file = new File(pathStr)
+    if file.exists
+    then Http.fromFile(file).mapError(exceptionToResponse)
+    else Response.text(s"File not found: $subPath").withStatus(Status.NotFound).toHandler.toHttp
+  }
+
+  val app: App[ResolutionPersistenceService with GraphDatabaseService] = Http.collectHttp[Request] {
+    case Method.GET -> Root / "health" => Handler.ok.toHttp
+    case Method.GET -> Root => Response.redirect(URL(Root / "index.html")).toHandler.toHttp
+    case Method.GET -> Root / "index.html"       => serveStaticFile("index.html")
+    case Method.GET -> "" /: "static" /: subPath => serveStaticFile(subPath.toString)
+    case _ -> "" /: "dynamic" /: _               => dynamic
+  }
 
   def run =
     Server
       .serve(app)
       .provide(
         Server.default,
-        DataService.live,
+        PersistenceService.live,
         ResolutionPersistenceService.live,
         EmbeddedNeoService.live
       )

@@ -6,27 +6,27 @@ import zio.Console.printLine
 import NeoEnrichment.*
 
 class ResolutionPersistenceService(dataService: PersistenceService):
-  def getTopLevelModules(soughtDep: String): Task[Set[VersionedModule]] =
-    DependencyResolver.resolve(soughtDep).map { _.topLevelModules }
+  def getTopLevelModules(sought: VersionedModule): Task[Set[VersionedModule]] =
+    DependencyResolver.resolve(sought).map { _.topLevelModules }
 
-  def getTransitiveModules(soughtDep: String): Task[Set[VersionedModule]] =
-    DependencyResolver.resolve(soughtDep).map { _.transitiveModules }
+  def getTransitiveModules(sought: VersionedModule): Task[Set[VersionedModule]] =
+    DependencyResolver.resolve(sought).map { _.transitiveModules }
 
-  def getParentageAdjacency(soughtDep: String): Task[Set[ParentAdjacency]] =
-    DependencyResolver.resolve(soughtDep).map { _.parentageAdjacencySet }
+  def getParentageAdjacency(sought: VersionedModule): Task[Set[ParentAdjacency]] =
+    DependencyResolver.resolve(sought).map { _.parentageAdjacencySet }
 
-  def getDependencyAdjacency(soughtDep: String): Task[Set[DependsAdjacency]] =
-    DependencyResolver.resolve(soughtDep).map { _.dependencyAdjacencySet }
+  def getDependencyAdjacency(sought: VersionedModule): Task[Set[DependsAdjacency]] =
+    DependencyResolver.resolve(sought).map { _.dependencyAdjacencySet }
 
-  def resolveAndPersist(soughtDep: String): Task[Set[Persisted[VersionedModule]]] =
+  def resolveAndPersist(sought: VersionedModule): Task[Set[Persisted[VersionedModule]]] =
     for {
-      resolution <- DependencyResolver.resolve(soughtDep)
+      resolution <- DependencyResolver.resolve(sought)
       persistedModules <- dataService.bulkUpsert(resolution.allKnownModules.toSeq)
-      persistedDeps <- dataService.bulkUpsertRelationships(
+      _ <- dataService.bulkUpsertRelationships(
         resolution.dependencyAdjacencySet.toSeq.map(da => da.from -> da.to),
         Rel.DEPENDS_ON
       )
-      persistedParents <- dataService.bulkUpsertRelationships(
+      _ <- dataService.bulkUpsertRelationships(
         resolution.parentageAdjacencySet.toSeq.map(pa => pa.child -> pa.parent),
         Rel.CHILD_OF
       )

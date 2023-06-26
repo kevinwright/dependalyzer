@@ -15,13 +15,22 @@ object EmbeddedNeoService:
   val dbName = "neo4j" // only the default is allowed
 
   private def initialize: Task[DatabaseManagementService] =
-    ZIO.debug("Initialising dbms") *> ZIO.attemptBlockingIO(
-      new DatabaseManagementServiceBuilder(dbPath)
+    ZIO.debug("Initialising dbms") *> ZIO.attemptBlockingIO {
+      val dbms = new DatabaseManagementServiceBuilder(dbPath)
         .setConfig(BoltConnector.enabled, true)
         .setConfig(BoltConnector.listen_address, new SocketAddress("localhost", 9669))
         .build()
-//        .setConfig(BoltConnector.encryption_level, BoltConnector.EncryptionLevel.OPTIONAL)
-    )
+      java.lang.Runtime.getRuntime.addShutdownHook(
+        new Thread {
+          override def run(): Unit = {
+            println("-== JAVA SHUTDOWN HOOK ==-")
+            dbms.shutdown()
+          }
+        },
+      )
+      dbms
+      //        .setConfig(BoltConnector.encryption_level, BoltConnector.EncryptionLevel.OPTIONAL)
+    }
 
   private def openDefaultDb(dbms: DatabaseManagementService): Task[GraphDatabaseService] =
     ZIO.debug("Opening Default DB") *> ZIO.attemptBlockingIO(dbms.database(dbName))
@@ -30,5 +39,5 @@ object EmbeddedNeoService:
     (ZIO.debug("shutting down dbms") *> ZIO.attempt(dbms.shutdown())).orDie
 
   val live: ZLayer[Any, Throwable, GraphDatabaseService] = ZLayer.scoped(
-    ZIO.acquireRelease(initialize)(finalize).flatMap(openDefaultDb)
+    ZIO.acquireRelease(initialize)(finalize).flatMap(openDefaultDb),
   )

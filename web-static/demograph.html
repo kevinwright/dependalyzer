@@ -1,0 +1,25 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <link rel="stylesheet" href="style/main.css">
+  <script src="https://unpkg.com/gojs@2.3.8/release/go.js"></script>
+  <script src="script/debrand.js"></script>
+</head>
+
+<body>
+  <div id="sample">
+    <div id="myDiagramDiv">
+      <canvas id="goCanvas" tabindex="0">
+        This text is displayed if your browser does not support the Canvas HTML element.
+      </canvas>
+    </div>
+  </div>
+
+  <script src="script/fullpagegraph.js"></script>
+  <script>
+    // loadJSONData("/static/sample.json");
+    loadJSONData("/dynamic/subgraph");
+  </script>
+</body>
+</html>

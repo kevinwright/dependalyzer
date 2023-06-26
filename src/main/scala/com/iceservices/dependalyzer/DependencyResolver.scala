@@ -35,7 +35,7 @@ class ResolutionResults(coursier: Resolution):
     topLevelModules ++ transitiveModules ++ transitiveParentModules + rootModule
 
   def dependencyAdjacencySet: Set[DependsAdjacency] =
-    coursier.transitiveDependencies.toSet.flatMap(dep =>
+    (coursier.dependencies ++ coursier.transitiveDependencies.toSet).flatMap(dep =>
       coursier
         .dependenciesOf(dep)
         .toSet
@@ -59,20 +59,14 @@ class ResolutionResults(coursier: Resolution):
 object DependencyResolver:
   URL.setURLStreamHandlerFactory(S3HandlerFactory)
 
-  val dependencyPattern: Regex = """([^:]+):([^@]+)@(.+)""".r
+  def depFromVm(vm: VersionedModule): CoursierDep =
+    CoursierDep(Module(Organization(vm.orgName), ModuleName(vm.moduleName)), vm.version)
 
-  def parseDep(str: String): CoursierDep =
-    str match {
-      case dependencyPattern(org, name, ver) =>
-        CoursierDep(Module(Organization(org), ModuleName(name)), ver)
-      case _ => sys.error(s"Invalid format: $str")
-    }
-
-  def resolve(sought: String): Task[ResolutionResults] =
+  def resolve(sought: VersionedModule): Task[ResolutionResults] =
     ZIO.fromFuture(
       Resolve()
         .addRepositories(MavenRepository("s3://cube-artifacts/maven/release"))
-        .addDependencies(parseDep(sought))
+        .addDependencies(depFromVm(sought))
         .future()
         .map(ResolutionResults(_))
     )

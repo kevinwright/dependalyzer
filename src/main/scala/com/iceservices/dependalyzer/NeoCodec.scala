@@ -15,7 +15,7 @@ inline def getElemLabels[A <: Tuple]: List[String] = inline erasedValue[A] match
 }
 
 inline given deriveNeoCodec[P <: Persistable](using
-  m: Mirror.ProductOf[P]
+  m: Mirror.ProductOf[P],
 ): NeoCodec[P] = {
   val elemLabels = getElemLabels[m.MirroredElemLabels]
   new NeoCodec[P] {
@@ -23,13 +23,13 @@ inline given deriveNeoCodec[P <: Persistable](using
 
     override def toMap(p: P): Map[String, String] =
       Map(
-        elemLabels.zip(p.productIterator.map(_.toString))*
+        elemLabels.zip(p.productIterator.map(_.toString))*,
       )
 
-    override def fromNode(node: Node): Persisted[P] =
+    override def fromPersistedNodeStub(node: NodeStub): Persisted[P] =
       Persisted(
-        m.fromProduct(Tuple.fromArray(elemLabels.toArray.map(node.getProperty))),
-        ElementId(node.getElementId)
+        m.fromProduct(Tuple.fromArray(elemLabels.toArray.map(node.props(_)))),
+        node.persistedId.get,
       )
 
   }
@@ -39,4 +39,5 @@ trait NeoCodec[P <: Persistable]:
   def label: String
   def toMap(p: P): Map[String, String]
   def toStub(p: P): NodeStub = NodeStub(label, toMap(p))
-  def fromNode(node: Node): Persisted[P]
+  def fromPersistedNodeStub(node: NodeStub): Persisted[P]
+

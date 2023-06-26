@@ -1,24 +1,63 @@
 package com.iceservices.dependalyzer
 
 import org.neo4j.graphdb.{
+  Direction,
   Entity,
   GraphDatabaseService,
   Label,
   Node,
+  Path,
+  Relationship,
   RelationshipType,
   ResourceIterator,
-  Transaction
+  Transaction,
 }
+import org.neo4j.graphdb.traversal.{Evaluators, TraversalDescription}
 
 import scala.jdk.CollectionConverters.*
 import zio.{ZIO, *}
 
 import java.io.IOException
 
+case class SubGraph(nodes: Seq[NodeStub], relationships: Seq[RelationshipStub])
+
+object SubGraph:
+  import NeoEnrichment.toStub
+  def fromPaths(paths: Iterable[Path]): SubGraph = {
+    val (nodeSet, relSet) =
+      paths.foldLeft((Set.empty[NodeStub], Set.empty[RelationshipStub])) {
+        case ((nodeAcc, relAcc), path) =>
+          val newNodeAcc = nodeAcc + path.startNode.toStub + path.endNode.toStub
+          val newRelAcc = relAcc ++ path.relationships.asScala.map(_.toStub)
+          newNodeAcc -> newRelAcc
+      }
+    SubGraph(nodeSet.toSeq, relSet.toSeq)
+  }
+
 object NeoEnrichment:
   given Conversion[String, Label] = (str: String) => Label.label(str)
 
-  extension (entity: Entity) def elementId: ElementId = ElementId(entity.getElementId)
+  extension (entity: Entity)
+    def elementId: ElementId = ElementId(entity.getElementId)
+    def props: Map[String, String] =
+      entity.getAllProperties.asScala.view.mapValues(_.toString).toMap
+
+  extension (n: Node)
+    def toStub: NodeStub =
+      NodeStub(
+        persistedId = Some(n.elementId),
+        label = n.getLabels.asScala.head.toString,
+        props = n.props,
+      )
+
+  extension (r: Relationship)
+    def toStub: RelationshipStub =
+      RelationshipStub(
+        from = r.getStartNode.toStub,
+        to = r.getEndNode.toStub,
+        relType = Rel.valueOf(r.getType.name),
+        persistedId = Some(r.elementId),
+      )
 
   extension (tx: Transaction)
 
@@ -26,9 +65,9 @@ object NeoEnrichment:
       fn(tx).tap(_ => ZIO.attemptBlockingIO(tx.commit()))
 
     def withIterator[A, I](
-      make: Transaction => ResourceIterator[I]
+      make: Transaction => ResourceIterator[I],
     )(
-      use: Iterator[I] => Task[A]
+      use: Iterator[I] => Task[A],
     ): Task[A] =
       for {
         iter <- ZIO.attemptBlockingIO(make(tx))
@@ -61,11 +100,11 @@ object NeoEnrichment:
     private def withTxAutoCommit[A](fn: Transaction => Task[A]): Task[A] =
       withTxManualCommit(_.autoCommit(fn))
 
-    def allByLabel(label: String): Task[Set[Node]] =
+    def allByLabel(label: String): Task[Set[NodeStub]] =
       withTxAutoCommit(
         _.withIterator(_.findNodes(label)) { iter =>
-          ZIO.succeed(iter.toSet)
-        }
+          ZIO.succeed(iter.map(_.toStub).toSet)
+        },
       )
 
     def idOf(stub: NodeStub): Task[Option[ElementId]] =
@@ -73,52 +112,72 @@ object NeoEnrichment:
         _.find(stub).map(_.map(_.elementId))
       }
 
-    def simpleUpsert(stub: NodeStub): Task[ElementId] =
-      withTxAutoCommit { _.upsert(stub).map(_.elementId) }
+    def simpleUpsert(stub: NodeStub): Task[NodeStub] =
+      withTxAutoCommit { _.upsert(stub).map(_.toStub) }
+
+    def subGraph(stub: NodeStub): Task[Option[SubGraph]] =
+      withTxAutoCommit { tx =>
+        val codec = summon[NeoCodec[VersionedModule]]
+        val td: TraversalDescription = tx
+          .traversalDescription()
+          .breadthFirst()
+          .relationships(Rel.DEPENDS_ON, Direction.OUTGOING)
+          .relationships(Rel.CHILD_OF, Direction.BOTH)
+//          .evaluator(Evaluators.all())
+        tx.find(stub).map { optNode =>
+          optNode.map { node =>
+            println(s"node was: $node")
+            val traverser = td.traverse(node)
+            println(s"traverser was: $traverser")
+
+            SubGraph.fromPaths(traverser.asScala)
+          }
+        }
+      }
 
     def bulkUpsertRelationships(
       pairs: Seq[(NodeStub, NodeStub)],
-      relType: RelationshipType
-    ): Task[Seq[ElementId]] =
+      relType: RelationshipType,
+    ): Task[Seq[RelationshipStub]] =
       withTxAutoCommit { tx =>
         ZIO.foreach(pairs) { (fromStub, toStub) =>
           for {
             fromNode <- tx.upsert(fromStub)
             toNode <- tx.upsert(toStub)
             rel = fromNode.createRelationshipTo(toNode, relType)
-          } yield rel.elementId
+          } yield rel.toStub
         }
       }
 
     def upsertRelationship(
       fromStub: NodeStub,
       toStub: NodeStub,
-      relType: RelationshipType
-    ): Task[ElementId] =
+      relType: RelationshipType,
+    ): Task[RelationshipStub] =
       withTxAutoCommit { tx =>
         for {
           fromNode <- tx.upsert(fromStub)
           toNode <- tx.upsert(toStub)
           rel = fromNode.createRelationshipTo(toNode, relType)
-        } yield rel.elementId
+        } yield rel.toStub
       }
 
     def upsertRelationshipById(
       fromId: ElementId,
       toId: ElementId,
-      relType: RelationshipType
-    ): Task[ElementId] =
+      relType: RelationshipType,
+    ): Task[RelationshipStub] =
       withTxAutoCommit { tx =>
         for {
           fromNode <- tx.nodeByElementId(fromId)
           toNode <- tx.nodeByElementId(toId)
           rel = fromNode.createRelationshipTo(toNode, relType)
-        } yield rel.elementId
+        } yield rel.toStub
       }
 
     def bulkUpsert(
-      stubs: Seq[NodeStub]
-    ): Task[Seq[ElementId]] =
+      stubs: Seq[NodeStub],
+    ): Task[Seq[Node]] =
       withTxAutoCommit { tx =>
-        ZIO.foreach(stubs) { stub => tx.upsert(stub).map(_.elementId) }
+        ZIO.foreach(stubs) { stub => tx.upsert(stub) }
       }

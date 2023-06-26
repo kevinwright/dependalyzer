@@ -2,20 +2,36 @@ package com.iceservices.dependalyzer
 
 import zio.*
 import zio.http.*
+import zio.http.html.*
 import org.neo4j.graphdb.GraphDatabaseService
 
 import zio.http.Server
 import zio.stream.ZStream
 import java.io.File
 import java.nio.file.Paths
+import zio.json._
+
+import NeoEnrichment.*
+import NeoEnrichment.given
 
 object WebMain extends ZIOAppDefault:
 
-  val soughtDep =
-    "tech.stage:stage-spark-utils@20230621.234928.f21e9ef-direct-conversions-SNAPSHOT"
+  val sought = VersionedModule(
+    "tech.stage",
+    "stage-spark-utils",
+    "20230621.234928.f21e9ef-direct-conversions-SNAPSHOT",
+  )
 
   def exceptionToResponse(e: Throwable): Response =
-    Response.text(e.toString).withStatus(Status.InternalServerError)
+    Response.html(
+      data = div(
+        b(e.toString),
+        ul(
+          e.getStackTrace.map(elem => li(elem.toString))*,
+        ),
+      ),
+      status = Status.InternalServerError,
+    )
 
   val DynamicRoot = Root / "dynamic"
 
@@ -26,36 +42,51 @@ object WebMain extends ZIOAppDefault:
           ZIO.service[GraphDatabaseService].map { db =>
             Response.text(db.databaseName() + " available = " + db.isAvailable)
           }
+        case Method.GET -> DynamicRoot / "subgraph" =>
+          val codec = summon[NeoCodec[VersionedModule]]
+          for {
+            _ <- ZIO.debug("requested subgraph")
+            gdb <- ZIO.service[GraphDatabaseService]
+            optSubGraph <- gdb.subGraph(codec.toStub(sought))
+            resultText <- ZIO.attempt(
+              optSubGraph match {
+                case Some(sg) => GoJsModel.fromSubGraph(sg).toJson
+                case None     => "Not found"
+              },
+            )
+            _ <- ZIO.debug(s"completed subgraph")
+          } yield Response.text(resultText)
         case Method.GET -> DynamicRoot / "debugTopLevel" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getTopLevelModules(soughtDep)
+            entries <- rps.getTopLevelModules(sought)
           } yield Response.text(entries.mkString("\n"))
         case Method.GET -> DynamicRoot / "debugTransitives" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getTransitiveModules(soughtDep)
+            entries <- rps.getTransitiveModules(sought)
           } yield Response.text(entries.mkString("\n"))
         case Method.GET -> DynamicRoot / "debugParentage" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getParentageAdjacency(soughtDep)
+            entries <- rps.getParentageAdjacency(sought)
           } yield Response.text(entries.map(_.toString).mkString("\n"))
         case Method.GET -> DynamicRoot / "debugDependsOn" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            entries <- rps.getDependencyAdjacency(soughtDep)
+            entries <- rps.getDependencyAdjacency(sought)
           } yield Response.text(entries.map(_.toString).mkString("\n"))
         case Method.GET -> DynamicRoot / "populate" =>
           for {
             rps <- ZIO.service[ResolutionPersistenceService]
-            _ <- rps.resolveAndPersist(soughtDep)
+            _ <- rps.resolveAndPersist(sought)
           } yield Response.text("Dependencies Persisted")
       }
       .mapError(exceptionToResponse)
 
+  // TODO: configurable directory, with fallback to classpath resources
   def serveStaticFile(subPath: String) = {
-    val pathStr = s"src/main/resources/web-static/$subPath"
+    val pathStr = s"web-static/$subPath"
     val file = new File(pathStr)
     if file.exists
     then Http.fromFile(file).mapError(exceptionToResponse)
@@ -77,5 +108,5 @@ object WebMain extends ZIOAppDefault:
         Server.default,
         PersistenceService.live,
         ResolutionPersistenceService.live,
-        EmbeddedNeoService.live
+        EmbeddedNeoService.live,
       )

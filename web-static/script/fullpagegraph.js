@@ -9,6 +9,21 @@ const myDiagram = new go.Diagram(
     }
 );
 
+myDiagram.animationManager.initialAnimationStyle = go.AnimationManager.AnimateLocations;
+
+function setForceDirectedLayout() {
+  myDiagram.layout = new go.ForceDirectedLayout();
+}
+function setForceLayeredDigraphLayout() {
+  myDiagram.layout = new go.LayeredDigraphLayout();
+}
+function setTreeLayout() {
+  myDiagram.layout = new go.TreeLayout();
+}
+function setCircularLayout() {
+  myDiagram.layout = new go.CircularLayout();
+}
+
 myDiagram.groupTemplate =
     new go.Group("Auto")
     .add(

@@ -1,8 +1,9 @@
 package com.iceservices.dependalyzer
 
+import com.iceservices.dependalyzer.models.{NodeStub, Persistable, Persisted}
+
 import scala.deriving.Mirror
 import scala.compiletime.{constValue, erasedValue, summonInline}
-
 import org.neo4j.graphdb.{GraphDatabaseService, Label, Node, ResourceIterator, Transaction}
 
 inline def getElemLabels[A <: Tuple]: List[String] = inline erasedValue[A] match {

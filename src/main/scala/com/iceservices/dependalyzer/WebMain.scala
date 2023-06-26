@@ -4,15 +4,15 @@ import zio.*
 import zio.http.*
 import zio.http.html.*
 import org.neo4j.graphdb.GraphDatabaseService
-
 import zio.http.Server
 import zio.stream.ZStream
+
 import java.io.File
 import java.nio.file.Paths
-import zio.json._
-
+import zio.json.*
 import NeoEnrichment.*
 import NeoEnrichment.given
+import com.iceservices.dependalyzer.models.{GoJsModel, VersionedModule}
 
 object WebMain extends ZIOAppDefault:
 
@@ -35,7 +35,7 @@ object WebMain extends ZIOAppDefault:
 
   val DynamicRoot = Root / "dynamic"
 
-  val dynamic: App[ResolutionPersistenceService with GraphDatabaseService] =
+  val dynamic: App[BizLogicService with GraphDatabaseService] =
     Http
       .collectZIO[Request] {
         case Method.GET -> DynamicRoot / "text" =>
@@ -58,27 +58,27 @@ object WebMain extends ZIOAppDefault:
           } yield Response.text(resultText)
         case Method.GET -> DynamicRoot / "debugTopLevel" =>
           for {
-            rps <- ZIO.service[ResolutionPersistenceService]
+            rps <- ZIO.service[BizLogicService]
             entries <- rps.getTopLevelModules(sought)
           } yield Response.text(entries.mkString("\n"))
         case Method.GET -> DynamicRoot / "debugTransitives" =>
           for {
-            rps <- ZIO.service[ResolutionPersistenceService]
+            rps <- ZIO.service[BizLogicService]
             entries <- rps.getTransitiveModules(sought)
           } yield Response.text(entries.mkString("\n"))
         case Method.GET -> DynamicRoot / "debugParentage" =>
           for {
-            rps <- ZIO.service[ResolutionPersistenceService]
+            rps <- ZIO.service[BizLogicService]
             entries <- rps.getParentageAdjacency(sought)
           } yield Response.text(entries.map(_.toString).mkString("\n"))
         case Method.GET -> DynamicRoot / "debugDependsOn" =>
           for {
-            rps <- ZIO.service[ResolutionPersistenceService]
+            rps <- ZIO.service[BizLogicService]
             entries <- rps.getDependencyAdjacency(sought)
           } yield Response.text(entries.map(_.toString).mkString("\n"))
         case Method.GET -> DynamicRoot / "populate" =>
           for {
-            rps <- ZIO.service[ResolutionPersistenceService]
+            rps <- ZIO.service[BizLogicService]
             _ <- rps.resolveAndPersist(sought)
           } yield Response.text("Dependencies Persisted")
       }
@@ -93,7 +93,7 @@ object WebMain extends ZIOAppDefault:
     else Response.text(s"File not found: $subPath").withStatus(Status.NotFound).toHandler.toHttp
   }
 
-  val app: App[ResolutionPersistenceService with GraphDatabaseService] = Http.collectHttp[Request] {
+  val app: App[BizLogicService with GraphDatabaseService] = Http.collectHttp[Request] {
     case Method.GET -> Root / "health" => Handler.ok.toHttp
     case Method.GET -> Root => Response.redirect(URL(Root / "index.html")).toHandler.toHttp
     case Method.GET -> Root / "index.html"       => serveStaticFile("index.html")
@@ -107,6 +107,6 @@ object WebMain extends ZIOAppDefault:
       .provide(
         Server.default,
         PersistenceService.live,
-        ResolutionPersistenceService.live,
+        BizLogicService.live,
         EmbeddedNeoService.live,
       )

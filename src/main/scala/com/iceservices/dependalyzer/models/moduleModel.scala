@@ -1,5 +1,7 @@
 package com.iceservices.dependalyzer
+package models
 
+import com.iceservices.dependalyzer.*
 import org.neo4j.graphdb.{Node, RelationshipType}
 import zio.json.*
 
@@ -21,39 +23,6 @@ object ElementId:
 extension (id: ElementId) def toString: String = id
 
 trait Persistable extends Product
-
-case class RelationshipStub(
-  persistedId: Option[ElementId],
-  relType: Rel,
-  from: NodeStub,
-  to: NodeStub,
-)
-
-object RelationshipStub:
-  given JsonCodec[RelationshipStub] = DeriveJsonCodec.gen[RelationshipStub]
-
-case class RelationshipIdStub(
-  persistedId: Option[ElementId],
-  from: ElementId,
-  to: ElementId,
-)
-
-object RelationshipIdStub:
-  given JsonCodec[RelationshipIdStub] = DeriveJsonCodec.gen[RelationshipIdStub]
-
-case class NodeStub(
-  label: String,
-  props: Map[String, String],
-  persistedId: Option[ElementId] = None,
-) {
-  import scala.jdk.CollectionConverters.*
-
-  def javaProps: java.util.Map[String, AnyRef] =
-    props.view.mapValues(_.asInstanceOf[AnyRef]).toMap.asJava
-}
-
-object NodeStub:
-  given JsonCodec[NodeStub] = DeriveJsonCodec.gen[NodeStub]
 
 case class Persisted[T <: Persistable](value: T, id: ElementId) {
   override def toString: String = s"[<$id>]$value"
@@ -98,13 +67,31 @@ object VersionedModule {
 case class DependsAdjacency(
   from: VersionedModule,
   to: VersionedModule,
+  scope: String,
 ) {
+  private val codec = summon[NeoCodec[VersionedModule]]
   override def toString: String = s"$from -[depends on]-> $to"
+  def toStub: RelationshipStub = RelationshipStub(
+    persistedId = None,
+    relType = Rel.DEPENDS_ON,
+    from = codec.toStub(from),
+    to = codec.toStub(to),
+    props = Map("scope" -> scope),
+  )
 }
 
 case class ParentAdjacency(
   child: VersionedModule,
   parent: VersionedModule,
 ) {
+  private val codec = summon[NeoCodec[VersionedModule]]
   override def toString: String = s"$child -[child of]-> $parent"
+
+  def toStub: RelationshipStub = RelationshipStub(
+    persistedId = None,
+    relType = Rel.CHILD_OF,
+    from = codec.toStub(child),
+    to = codec.toStub(parent),
+    props = Map.empty,
+  )
 }

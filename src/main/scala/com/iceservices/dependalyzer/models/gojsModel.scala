@@ -1,5 +1,8 @@
 package com.iceservices.dependalyzer
+package models
 
+import com.iceservices.dependalyzer.*
+import com.iceservices.dependalyzer.models.{Persisted, Rel, RelationshipStub, VersionedModule}
 import zio.json.*
 
 case class GojsNode(
@@ -19,6 +22,7 @@ case class GojsLink(
   from: ElementId,
   to: ElementId,
   relType: String,
+  scope: String,
 )
 
 object GojsLink:
@@ -35,8 +39,9 @@ object GoJsModel:
   def fromSubGraph(sg: SubGraph): GoJsModel = {
     val nodeCodec = summon[NeoCodec[VersionedModule]]
     val modules: Seq[Persisted[VersionedModule]] = sg.nodes.map(nodeCodec.fromPersistedNodeStub)
-    val parentage = sg.relationships.collect { case RelationshipStub(_, Rel.CHILD_OF, from, to) =>
-      nodeCodec.fromPersistedNodeStub(from) -> nodeCodec.fromPersistedNodeStub(to)
+    val parentage = sg.relationships.collect {
+      case RelationshipStub(_, Rel.CHILD_OF, from, to, props) =>
+        nodeCodec.fromPersistedNodeStub(from) -> nodeCodec.fromPersistedNodeStub(to)
     }
     val parents: Set[Persisted[VersionedModule]] = parentage.map(_._2).toSet
     val nodes = modules.map(vm =>
@@ -50,12 +55,15 @@ object GoJsModel:
         group = parentage.find(_._1 == vm).map(_._2.id),
       ),
     )
-    val links = sg.relationships.filter(_.relType == Rel.DEPENDS_ON).map(rel =>
-      GojsLink(
-        from = rel.from.persistedId.get,
-        to = rel.to.persistedId.get,
-        relType = rel.relType.toString,
-      ),
-    )
+    val links = sg.relationships
+      .filter(_.relType == Rel.DEPENDS_ON)
+      .map(rel =>
+        GojsLink(
+          from = rel.from.persistedId.get,
+          to = rel.to.persistedId.get,
+          relType = rel.relType.toString,
+          scope = rel.props.getOrElse("scope", "*"),
+        ),
+      )
     GoJsModel(nodes, links)
   }

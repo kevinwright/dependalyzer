@@ -1,5 +1,13 @@
 package com.iceservices.dependalyzer
 
+import com.iceservices.dependalyzer.models.{
+  ElementId,
+  NodeStub,
+  Rel,
+  RelationshipIdStub,
+  RelationshipStub,
+  VersionedModule,
+}
 import org.neo4j.graphdb.{
   Direction,
   Entity,
@@ -57,6 +65,7 @@ object NeoEnrichment:
         to = r.getEndNode.toStub,
         relType = Rel.valueOf(r.getType.name),
         persistedId = Some(r.elementId),
+        props = r.props,
       )
 
   extension (tx: Transaction)
@@ -80,7 +89,7 @@ object NeoEnrichment:
 
     def insert(stub: NodeStub): Task[Node] = ZIO.attempt {
       val node = tx.createNode(stub.label)
-      stub.props.foreach((k, v) => node.setProperty(k, v))
+      stub.applyPropsToEntity(node)
       node
     }
 
@@ -136,42 +145,40 @@ object NeoEnrichment:
       }
 
     def bulkUpsertRelationships(
-      pairs: Seq[(NodeStub, NodeStub)],
-      relType: RelationshipType,
+      relationships: Seq[RelationshipStub],
     ): Task[Seq[RelationshipStub]] =
       withTxAutoCommit { tx =>
-        ZIO.foreach(pairs) { (fromStub, toStub) =>
+        ZIO.foreach(relationships) { relStub =>
           for {
-            fromNode <- tx.upsert(fromStub)
-            toNode <- tx.upsert(toStub)
-            rel = fromNode.createRelationshipTo(toNode, relType)
+            fromNode <- tx.upsert(relStub.from)
+            toNode <- tx.upsert(relStub.to)
+            rel <- ZIO.attempt(fromNode.createRelationshipTo(toNode, relStub.relType))
+            _ <- ZIO.attempt(relStub.applyPropsToEntity(rel))
           } yield rel.toStub
         }
       }
 
     def upsertRelationship(
-      fromStub: NodeStub,
-      toStub: NodeStub,
-      relType: RelationshipType,
+      stub: RelationshipStub,
     ): Task[RelationshipStub] =
       withTxAutoCommit { tx =>
         for {
-          fromNode <- tx.upsert(fromStub)
-          toNode <- tx.upsert(toStub)
-          rel = fromNode.createRelationshipTo(toNode, relType)
+          fromNode <- tx.upsert(stub.from)
+          toNode <- tx.upsert(stub.to)
+          rel <- ZIO.attempt(fromNode.createRelationshipTo(toNode, stub.relType))
+          _ <- ZIO.attempt(stub.applyPropsToEntity(rel))
         } yield rel.toStub
       }
 
     def upsertRelationshipById(
-      fromId: ElementId,
-      toId: ElementId,
-      relType: RelationshipType,
+      stub: RelationshipIdStub,
     ): Task[RelationshipStub] =
       withTxAutoCommit { tx =>
         for {
-          fromNode <- tx.nodeByElementId(fromId)
-          toNode <- tx.nodeByElementId(toId)
-          rel = fromNode.createRelationshipTo(toNode, relType)
+          fromNode <- tx.nodeByElementId(stub.from)
+          toNode <- tx.nodeByElementId(stub.to)
+          rel <- ZIO.attempt(fromNode.createRelationshipTo(toNode, stub.relType))
+          _ <- ZIO.attempt(stub.applyPropsToEntity(rel))
         } yield rel.toStub
       }
 

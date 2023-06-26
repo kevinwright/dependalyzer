@@ -4,8 +4,15 @@ import org.neo4j.graphdb.GraphDatabaseService
 import zio.*
 import zio.Console.printLine
 import NeoEnrichment.*
+import com.iceservices.dependalyzer.models.{
+  DependsAdjacency,
+  ParentAdjacency,
+  Persisted,
+  Rel,
+  VersionedModule,
+}
 
-class ResolutionPersistenceService(dataService: PersistenceService):
+class BizLogicService(dataService: PersistenceService):
   def getTopLevelModules(sought: VersionedModule): Task[Set[VersionedModule]] =
     DependencyResolver.resolve(sought).map { _.topLevelModules }
 
@@ -20,17 +27,19 @@ class ResolutionPersistenceService(dataService: PersistenceService):
 
   def resolveAndPersist(sought: VersionedModule): Task[Set[Persisted[VersionedModule]]] =
     for {
-      resolution <- DependencyResolver.resolve(sought)
-      persistedModules <- dataService.bulkUpsert(resolution.allKnownModules.toSeq)
-      _ <- dataService.bulkUpsertRelationships(
-        resolution.dependencyAdjacencySet.toSeq.map(da => da.from -> da.to),
-        Rel.DEPENDS_ON
+      resolution <- ZIO.debug("resolving") *> DependencyResolver.resolve(sought)
+      persistedModules <- ZIO.debug("upserting modules") *> dataService.bulkUpsert(
+        resolution.allKnownModules.toSeq,
       )
-      _ <- dataService.bulkUpsertRelationships(
-        resolution.parentageAdjacencySet.toSeq.map(pa => pa.child -> pa.parent),
-        Rel.CHILD_OF
-      )
+      _ <- ZIO.debug("upserting deps") *>
+        ZIO
+          .attempt(resolution.dependencyAdjacencySet.toSeq)
+          .flatMap(dataService.bulkUpsertDependencies)
+      _ <- ZIO.debug("upserting parents") *>
+        ZIO
+          .attempt(resolution.parentageAdjacencySet.toSeq)
+          .flatMap(dataService.bulkUpsertParentage)
     } yield persistedModules.toSet
 
-object ResolutionPersistenceService:
-  val live = ZLayer.fromFunction(new ResolutionPersistenceService(_))
+object BizLogicService:
+  val live = ZLayer.fromFunction(new BizLogicService(_))

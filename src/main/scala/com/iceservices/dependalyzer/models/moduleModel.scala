@@ -70,7 +70,7 @@ case class DependsAdjacency(
   scope: String,
 ) {
   private val codec = summon[NeoCodec[VersionedModule]]
-  override def toString: String = s"$from -[depends on]-> $to"
+  override def toString: String = s"$from -[depends on ($scope)]-> $to"
   def toStub: RelationshipStub = RelationshipStub(
     persistedId = None,
     relType = Rel.DEPENDS_ON,

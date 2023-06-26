@@ -56,31 +56,16 @@ object WebMain extends ZIOAppDefault:
             )
             _ <- ZIO.debug(s"completed subgraph")
           } yield Response.text(resultText)
-        case Method.GET -> DynamicRoot / "debugTopLevel" =>
-          for {
-            rps <- ZIO.service[BizLogicService]
-            entries <- rps.getTopLevelModules(sought)
-          } yield Response.text(entries.mkString("\n"))
-        case Method.GET -> DynamicRoot / "debugTransitives" =>
-          for {
-            rps <- ZIO.service[BizLogicService]
-            entries <- rps.getTransitiveModules(sought)
-          } yield Response.text(entries.mkString("\n"))
-        case Method.GET -> DynamicRoot / "debugParentage" =>
-          for {
-            rps <- ZIO.service[BizLogicService]
-            entries <- rps.getParentageAdjacency(sought)
-          } yield Response.text(entries.map(_.toString).mkString("\n"))
-        case Method.GET -> DynamicRoot / "debugDependsOn" =>
-          for {
-            rps <- ZIO.service[BizLogicService]
-            entries <- rps.getDependencyAdjacency(sought)
-          } yield Response.text(entries.map(_.toString).mkString("\n"))
         case Method.GET -> DynamicRoot / "populate" =>
           for {
             rps <- ZIO.service[BizLogicService]
             _ <- rps.resolveAndPersist(sought)
           } yield Response.text("Dependencies Persisted")
+        case Method.GET -> DynamicRoot / "debugConfigs" =>
+          for {
+            rps <- ZIO.service[BizLogicService]
+            _ <- rps.debugConfigs(sought)
+          } yield Response.text("Complete")
       }
       .mapError(exceptionToResponse)
 

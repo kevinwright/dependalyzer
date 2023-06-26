@@ -1,7 +1,5 @@
 package com.iceservices.dependalyzer
 
-import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
-
 import java.io.InputStream
 import java.net.{URL, URLConnection, URLStreamHandler, URLStreamHandlerFactory}
 import java.nio.charset.CodingErrorAction
@@ -10,6 +8,8 @@ import software.amazon.awssdk.services.s3.model.GetObjectRequest
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 
 import scala.io.{Codec, Source}
 import scala.util.control.NonFatal
@@ -27,6 +27,10 @@ class S3HandlerInstance extends URLStreamHandler {
             val gor = GetObjectRequest.builder().bucket(bucketName).key(key).build()
             s3Client.getObject(gor, ResponseTransformer.toInputStream)
           } catch {
+            case e: NoSuchKeyException =>
+              println(s"s3 No such key: $urlToOpen")
+              throw e
+
             case e: Throwable =>
               e.printStackTrace()
               throw e

@@ -24,6 +24,18 @@ function setCircularLayout() {
   myDiagram.layout = new go.CircularLayout();
 }
 
+myDiagram.linkTemplate =
+    new go.Link("Auto")
+    .add(
+        new go.Shape().bind("stroke", "scope", x => x === "test" ? "blue" : "black"),
+        new go.Shape({ toArrow: "Standard" }),
+        new go.Panel("Vertical")
+        .add(
+            new go.TextBlock({ margin: 3 }).bind("text", "relType"),
+            new go.TextBlock({ margin: 3 }).bind("text", "scope")
+        )
+    );
+
 myDiagram.groupTemplate =
     new go.Group("Auto")
     .add(
@@ -62,17 +74,17 @@ myDiagram.nodeTemplate =
         new go.Panel("Vertical")
       .add(
           new go.TextBlock(
-              { margin: 8, font: "bold 14px sans-serif", stroke: '#333' }
+              { margin: 2, font: "bold 14px sans-serif", stroke: '#333' }
           ).bind("text", "org")
       )
       .add(
           new go.TextBlock(
-              { margin: 8, font: "bold 14px sans-serif", stroke: '#333' }
+              { margin: 2, font: "bold 14px sans-serif", stroke: '#333' }
           ).bind("text", "name")
       )
       .add(
           new go.TextBlock(
-              { margin: 8, font: "bold 14px sans-serif", stroke: '#333' }
+              { margin: 2, font: "bold 14px sans-serif", stroke: '#333' }
           ).bind("text", "version")
       )
     );

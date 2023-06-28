@@ -1,7 +1,7 @@
-package com.iceservices.dependalyzer
+package com.iceservices.dependalyzer.coursiersupport
 
-import zio.*
 import coursier.util.Sync
+import zio.*
 
 given ZioCoursierTask: Sync[Task] with
   def point[A](a: A): Task[A] = ZIO.succeed(a)

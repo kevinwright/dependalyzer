@@ -4,13 +4,7 @@ import org.neo4j.graphdb.GraphDatabaseService
 import zio.*
 import zio.Console.printLine
 import NeoEnrichment.*
-import com.iceservices.dependalyzer.models.{
-  DependsAdjacency,
-  ParentAdjacency,
-  Persisted,
-  Rel,
-  VersionedModule
-}
+import com.iceservices.dependalyzer.models.{DependsAdjacency, Organisation, ParentAdjacency, Persisted, Rel, VersionedModule}
 import coursier.core.Configuration
 
 class BizLogicService(dataService: PersistenceService):
@@ -47,24 +41,29 @@ class BizLogicService(dataService: PersistenceService):
       }
       .unit
 
-  def resolveAndPersist(sought: VersionedModule): Task[Set[Persisted[VersionedModule]]] =
-    ZIO.foldLeft(allConfigs)(Set.empty[Persisted[VersionedModule]]) { case (acc, config) =>
-      for {
-        _ <- ZIO.debug(s"resolving $config")
-        resolution <- DependencyResolver.resolve(sought, config)
-        persistedModules <- ZIO.debug("upserting modules") *> dataService.bulkUpsert(
-          resolution.allKnownModules.toSeq,
-        )
-        _ <- ZIO.debug(s"upserting deps for $config") *>
-          ZIO
-            .attempt(resolution.dependencyAdjacencySet.toSeq)
-            .flatMap(dataService.bulkUpsertDependencies)
-        _ <- ZIO.debug(s"upserting parents for $config") *>
-          ZIO
-            .attempt(resolution.parentageAdjacencySet.toSeq)
-            .flatMap(dataService.bulkUpsertParentage)
-      } yield acc ++ persistedModules
+  def flattenDeps(xss: Seq[Set[DependsAdjacency]]): Seq[DependsAdjacency] = {
+    val daMap = xss.foldLeft(Map.empty[(VersionedModule, VersionedModule), String]) {
+      case (acc, xs) =>
+        xs.foldLeft(acc) { case (subacc, da) =>
+          subacc + ((da.from, da.to) -> da.scope)
+        }
     }
+    daMap.map { case ((from, to), scope) => DependsAdjacency(from, to, scope) }.toSeq
+  }
+
+  def resolveAndPersist(sought: VersionedModule): Task[Set[Persisted[VersionedModule]]] =
+    for {
+      resolutions <- ZIO.foreach(importantConfigs)(DependencyResolver.resolve(sought, _))
+      _ <- ZIO.debug("upserting modules")
+      persistedModules <- dataService.bulkUpsert(resolutions.flatMap(_.allKnownModules))
+      _ <- ZIO.debug("upserting deps")
+      _ <- dataService.bulkUpsertDependencies(
+        flattenDeps(resolutions.map(_.dependencyAdjacencySet))
+      )
+      _ <- ZIO.debug("upserting parents")
+      _ <- dataService.bulkUpsertParentage(resolutions.flatMap(_.parentageAdjacencySet).toSeq)
+    } yield persistedModules.toSet
+
 
 object BizLogicService:
   val live = ZLayer.fromFunction(new BizLogicService(_))

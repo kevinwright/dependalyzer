@@ -2,9 +2,7 @@ const myDiagram = new go.Diagram(
     myDiagramDiv,
     {
       initialAutoScale: go.Diagram.Uniform,
-      //layout: new go.ForceDirectedLayout(),
       layout: new go.LayeredDigraphLayout(),
-      //layout: new go.TreeLayout(),
       "undoManager.isEnabled": false
     }
 );
@@ -24,16 +22,45 @@ function setCircularLayout() {
   myDiagram.layout = new go.CircularLayout();
 }
 
+//see https://gojs.net/latest/samples/relationships.html for others
+let dottedBlackLine = new go.Shape({
+  geometryString: "M0 0 M4 0 L4.1 0",
+  fill: "transparent",
+  stroke: "black",
+  strokeWidth: 1,
+  strokeCap: "round"
+});
+
+let singleBlackLine= new go.Shape({
+  geometryString: "M0 0 L1 0",
+  fill: "transparent",
+  stroke: "black",
+  strokeWidth: 1,
+  strokeCap: "square"
+});
+
+let singleGreenLine= new go.Shape({
+  geometryString: "M0 0 L1 0",
+  fill: "transparent",
+  stroke: "limegreen",
+  strokeWidth: 1,
+  strokeCap: "square"
+});
+
+function patternForScope(scope) {
+  console.log(`patternForScope ${scope}`)
+  switch(scope) {
+    case "optional": console.log("returning optional"); return dottedBlackLine;
+    case "test": console.log("returning test"); return singleGreenLine;
+    default: console.log("returning default"); return singleBlackLine;
+  }
+}
 myDiagram.linkTemplate =
     new go.Link("Auto")
     .add(
-        new go.Shape().bind("stroke", "scope", x => x === "test" ? "blue" : "black"),
-        new go.Shape({ toArrow: "Standard" }),
-        new go.Panel("Vertical")
-        .add(
-            new go.TextBlock({ margin: 3 }).bind("text", "relType"),
-            new go.TextBlock({ margin: 3 }).bind("text", "scope")
-        )
+        new go.Shape({ isPanelMain: true, stroke: "transparent" })
+            .bind("pathPattern", "scope", patternForScope),
+        new go.Shape({ toArrow: "Standard" })
     );
 
 myDiagram.groupTemplate =

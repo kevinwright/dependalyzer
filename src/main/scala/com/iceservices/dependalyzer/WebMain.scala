@@ -12,7 +12,7 @@ import java.nio.file.Paths
 import zio.json.*
 import NeoEnrichment.*
 import NeoEnrichment.given
-import com.iceservices.dependalyzer.models.{GoJsModel, VersionedModule}
+import com.iceservices.dependalyzer.models.{GoJsModel, Organisation, VersionedModule}
 
 object WebMain extends ZIOAppDefault:
 
@@ -38,6 +38,12 @@ object WebMain extends ZIOAppDefault:
   val dynamic: App[BizLogicService with GraphDatabaseService] =
     Http
       .collectZIO[Request] {
+        case Method.GET -> DynamicRoot / "testCompletion" =>
+          for {
+            results <- DependencyResolver.recursiveCompletion("tech.stage")
+            _ <- ZIO.debug(s"${results.size} results")
+          } yield Response.json(results.toJson)
+
         case Method.GET -> DynamicRoot / "text" =>
           ZIO.service[GraphDatabaseService].map { db =>
             Response.text(db.databaseName() + " available = " + db.isAvailable)
@@ -51,20 +57,20 @@ object WebMain extends ZIOAppDefault:
             resultText <- ZIO.attempt(
               optSubGraph match {
                 case Some(sg) => GoJsModel.fromSubGraph(sg).toJson
-                case None     => "Not found"
+                case None     => """{"error": "Not found"}"""
               },
             )
             _ <- ZIO.debug(s"completed subgraph")
-          } yield Response.text(resultText)
+          } yield Response.json(resultText)
         case Method.GET -> DynamicRoot / "populate" =>
           for {
-            rps <- ZIO.service[BizLogicService]
-            _ <- rps.resolveAndPersist(sought)
+            bls <- ZIO.service[BizLogicService]
+            _ <- bls.resolveAndPersist(sought)
           } yield Response.text("Dependencies Persisted")
         case Method.GET -> DynamicRoot / "debugConfigs" =>
           for {
-            rps <- ZIO.service[BizLogicService]
-            _ <- rps.debugConfigs(sought)
+            bls <- ZIO.service[BizLogicService]
+            _ <- bls.debugConfigs(sought)
           } yield Response.text("Complete")
       }
       .mapError(exceptionToResponse)

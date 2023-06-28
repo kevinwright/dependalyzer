@@ -28,7 +28,7 @@ Global / watchSources := {
   }
 }
 
-val coursierVersion = "2.1.4"
+val coursierVersion = "2.1.5"
 val neo4jVersion = "5.9.0"
 
 lazy val root = (project in file("."))

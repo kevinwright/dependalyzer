@@ -72,11 +72,8 @@ class S3HandlerInstance extends URLStreamHandler {
       val key = url.getPath.tail // drop the leading /
 
       try {
-        println(s"s3 opening: $url")
-
         if key.endsWith("/") then {
           val found = s3Client.listObjects(bucketName, key)
-          println("directory listing:")
           val links =
             found.map(_.substring(key.length)).map(entry => s"""<a href="$entry">$entry</a>""")
           val html =
@@ -100,7 +97,7 @@ class S3HandlerInstance extends URLStreamHandler {
     }
 
   override def openConnection(urlToOpen: URL): URLConnection = {
-    println(s"s3 openConnection: $urlToOpen")
+//    println(s"s3 openConnection: $urlToOpen")
     new URLConnection(urlToOpen) {
       override def getInputStream: InputStream = inputStreamFor(urlToOpen)
       override def connect(): Unit = {}

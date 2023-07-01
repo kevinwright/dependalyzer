@@ -1,6 +1,7 @@
 package com.iceservices.dependalyzer
 
-import com.iceservices.dependalyzer.coursiersupport.{DebuggingMavenRepository, S3HandlerFactory}
+import com.iceservices.dependalyzer.coursiersupport.*
+import com.iceservices.dependalyzer.coursiersupport.given
 import com.iceservices.dependalyzer.models.{DependsAdjacency, ParentAdjacency, VersionedModule}
 import coursier.cache.loggers.RefreshLogger
 import zio.*
@@ -68,51 +69,22 @@ object DependencyResolver:
   import coursier.cache.{Cache, CacheDefaults, FileCache}
   import coursier.core.Configuration
   import coursier.complete.Complete
-  import coursiersupport.*
-  import coursiersupport.given
 
-  val cache: Cache[Task] = FileCache[Task]().withLogger(new SimpleCacheLogger(println))
-//  val s3repo: Repository = DebuggingMavenRepository("s3://cube-artifacts/maven/release")
-  val s3repo: Repository = MavenRepository("s3://cube-artifacts/maven/release")
-//  val localMavenRepo = LocalRepositories.Dangerous.maven2Local
-  val completer: Complete[Task] = Complete(cache).addRepositories(s3repo)
+  val cache: Cache[Task] = FileCache[Task]() // .withLogger(new SimpleCacheLogger(println))
 
   def depFromVm(vm: VersionedModule): CoursierDep =
     CoursierDep(Module(Organization(vm.orgName), ModuleName(vm.moduleName)), vm.version)
 
-  def recursiveCompletion(organization: String): Task[Map[String, Seq[String]]] =
-    for {
-      _ <- ZIO.debug(s"Cache location: ${CacheDefaults.location}")
-      allOrgs <- recurseOrgs(organization)
-      versions <- ZIO.foreach(allOrgs) { org =>
-        completeOrg(s"$org:", debug = true).map(org -> _)
-      }
-    } yield versions.filterNot(_._2.isEmpty).toMap
+  def resolve(
+    repositories: RepositorySet,
+    sought: VersionedModule,
+    config: Configuration
+  ): Task[ResolutionResults] = {
 
-  def recurseOrgs(organization: String): Task[Seq[String]] =
-    for {
-      suborgs <- completeOrg(s"$organization.")
-      nested <- ZIO.foreach(suborgs)(recurseOrgs)
-    } yield organization +: nested.flatten
-
-  def completeOrg(organization: String, debug: Boolean = false): Task[Seq[String]] =
-    for {
-      _ <- if debug then ZIO.debug(s"trying to complete: [$organization]") else ZIO.unit
-      topLevel <- completer.withInput(organization).result()
-      results <- ZIO.foreach(topLevel.results) { entry =>
-        for {
-          result <- ZIO.fromEither(entry._2)
-          _ <- if debug && result.nonEmpty then ZIO.debug(entry) else ZIO.unit
-        } yield result
-      }
-    } yield results.flatten
-
-  def resolve(sought: VersionedModule, config: Configuration): Task[ResolutionResults] = {
-
-//    val fetch = ResolutionProcess.fetch(
-//      Resolve.defaultRepositories :+ s3repo,
-//      cache
-//    )
+    //  val fetch = ResolutionProcess.fetch(
+    //    Resolve.defaultRepositories :+ s3repo,
+    //    cache
+    //  )
 //
 //    val start = Resolution(
 //      Seq(depFromVm(sought))
@@ -121,7 +93,7 @@ object DependencyResolver:
 //    start.process.run(fetch).map(ResolutionResults(_))
 
     Resolve(cache)
-      .addRepositories(s3repo)
+      .addRepositories(repositories.all*)
       .addDependencies(depFromVm(sought))
       .mapResolutionParams(
         _.withDefaultConfiguration(config)

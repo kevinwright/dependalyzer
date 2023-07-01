@@ -1,10 +1,10 @@
-package com.iceservices.dependalyzer
+package com.iceservices.dependalyzer.neo
 
 import com.iceservices.dependalyzer.models.{NodeStub, Persistable, Persisted}
+import org.neo4j.graphdb.*
 
-import scala.deriving.Mirror
 import scala.compiletime.{constValue, erasedValue, summonInline}
-import org.neo4j.graphdb.{GraphDatabaseService, Label, Node, ResourceIterator, Transaction}
+import scala.deriving.Mirror
 
 inline def getElemLabels[A <: Tuple]: List[String] = inline erasedValue[A] match {
   case _: EmptyTuple => Nil // stop condition - the tuple is empty
@@ -22,10 +22,10 @@ inline given deriveNeoCodec[P <: Persistable](using
   new NeoCodec[P] {
     override val label: String = constValue[m.MirroredLabel]
 
-    override def toMap(p: P): Map[String, String] =
-      Map(
-        elemLabels.zip(p.productIterator.map(_.toString))*,
-      )
+//    override def toMap(p: P): Map[String, String] =
+//      Map(
+//        elemLabels.zip(p.productIterator.map(_.toString))*,
+//      )
 
     override def fromPersistedNodeStub(node: NodeStub): Persisted[P] =
       Persisted(
@@ -38,7 +38,6 @@ inline given deriveNeoCodec[P <: Persistable](using
 
 trait NeoCodec[P <: Persistable]:
   def label: String
-  def toMap(p: P): Map[String, String]
-  def toStub(p: P): NodeStub = NodeStub(label, toMap(p))
+//  def toMap(p: P): Map[String, String]
+//  def toStub(p: P): NodeStub = NodeStub(label, toMap(p))
   def fromPersistedNodeStub(node: NodeStub): Persisted[P]
-

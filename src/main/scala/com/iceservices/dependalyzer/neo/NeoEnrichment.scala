@@ -1,31 +1,13 @@
 package com.iceservices.dependalyzer
+package neo
 
-import com.iceservices.dependalyzer.models.{
-  ElementId,
-  NodeStub,
-  Rel,
-  RelationshipIdStub,
-  RelationshipStub,
-  VersionedModule,
-}
-import org.neo4j.graphdb.{
-  Direction,
-  Entity,
-  GraphDatabaseService,
-  Label,
-  Node,
-  Path,
-  Relationship,
-  RelationshipType,
-  ResourceIterator,
-  Transaction,
-}
+import com.iceservices.dependalyzer.models.*
+import org.neo4j.graphdb.*
 import org.neo4j.graphdb.traversal.{Evaluators, TraversalDescription}
-
-import scala.jdk.CollectionConverters.*
-import zio.{ZIO, *}
+import zio.*
 
 import java.io.IOException
+import scala.jdk.CollectionConverters.*
 
 case class SubGraph(nodes: Seq[NodeStub], relationships: Seq[RelationshipStub])
 
@@ -50,11 +32,16 @@ object NeoEnrichment:
     def props: Map[String, String] =
       entity.getAllProperties.asScala.view.mapValues(_.toString).toMap
 
+    def update(props: Map[String, String]): Task[Node] = ZIO.attempt(
+      props.foreach(entity.setProperty.tupled)
+    )
+
   extension (n: Node)
     def toStub: NodeStub =
       NodeStub(
         persistedId = Some(n.elementId),
         label = n.getLabels.asScala.head.toString,
+        keys = Set.empty,
         props = n.props,
       )
 
@@ -85,7 +72,7 @@ object NeoEnrichment:
       } yield result
 
     def find(stub: NodeStub): Task[Option[Node]] =
-      withIterator(_.findNodes(stub.label, stub.javaProps))(iter => ZIO.succeed(iter.nextOption()))
+      withIterator(_.findNodes(stub.label, stub.keyJavaProps))(iter => ZIO.succeed(iter.nextOption()))
 
     def insert(stub: NodeStub): Task[Node] = ZIO.attempt {
       val node = tx.createNode(stub.label)
@@ -94,7 +81,14 @@ object NeoEnrichment:
     }
 
     def upsert(stub: NodeStub): Task[Node] =
-      find(stub).flatMap(_.fold(insert(stub))(ZIO.succeed))
+      for {
+        found <- find(stub)
+        updated <- found match {
+          case Some(node) => node.update(stub.nonKeyProps)
+          case None => insert(stub)
+        }
+      } yield updated
+
 
     def nodeByElementId(id: ElementId): Task[Node] =
       ZIO.attempt(tx.getNodeByElementId(id.toString))

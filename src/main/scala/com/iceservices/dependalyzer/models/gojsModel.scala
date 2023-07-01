@@ -2,7 +2,7 @@ package com.iceservices.dependalyzer
 package models
 
 import com.iceservices.dependalyzer.*
-import com.iceservices.dependalyzer.models.{Persisted, Rel, RelationshipStub, VersionedModule}
+import com.iceservices.dependalyzer.neo.{NeoCodec, SubGraph, given}
 import zio.json.*
 
 case class GojsNode(
@@ -40,7 +40,7 @@ object GoJsModel:
     val nodeCodec = summon[NeoCodec[VersionedModule]]
     val modules: Seq[Persisted[VersionedModule]] = sg.nodes.map(nodeCodec.fromPersistedNodeStub)
     val parentage = sg.relationships.collect {
-      case RelationshipStub(_, Rel.CHILD_OF, from, to, props) =>
+      case RelationshipStub(_, Rel.CHILD_OF, from, to, _) =>
         nodeCodec.fromPersistedNodeStub(from) -> nodeCodec.fromPersistedNodeStub(to)
     }
     val parents: Set[Persisted[VersionedModule]] = parentage.map(_._2).toSet

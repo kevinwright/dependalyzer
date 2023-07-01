@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@materializecss/materialize@2.0.1-alpha/dist/css/materialize.min.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+<body>
+
+<nav class="light-blue lighten-1" role="navigation">
+  <div class="nav-wrapper container">
+    <a id="logo-container" href="#" class="brand-logo">Dependalyzer</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="row section">
+    <div class="input-field outlined col s12">
+      <i class="material-icons prefix">textsms</i>
+      <input id="item-input" type="text" class="validate">
+      <label for="item-input">Search Input</label>
+    </div>
+
+    <div id="search-output" class="input-field col s12">
+    </div>
+
+    <template id="working-template">
+      <div class="progress">
+        <div class="indeterminate"></div>
+      </div>
+    </template>
+
+    <!--
+    <br>
+    <h2>names</h2>
+    <ul id="name-list"></ul>
+    <h2>organisations</h2>
+    <ul id="org-list"></ul>
+    <h2>values</h2>
+    <ul id="package-list"></ul>
+    -->
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@materializecss/materialize@2.0.1-alpha/dist/js/materialize.min.js"></script>
+
+<script>
+  let itemInput = document.getElementById('item-input');
+  let nameList = document.getElementById('name-list')
+  let orgList = document.getElementById('org-list')
+  let packageList = document.getElementById('package-list')
+  let searchOutput = document.getElementById('search-output')
+  let workingTemplate = document.getElementById('working-template')
+
+  let webSocket = new WebSocket("ws://localhost:8080/ws/testSocket")
+
+  webSocket.onopen = (msgEvent) => {
+    console.log('connected!');
+  };
+
+  function setInputText(text) {
+    itemInput.value=text;
+    inputTextChanged(text);
+  }
+  function createListItem(kind, text) {
+    return `<a href="#!" class="collection-item" onclick="setInputText('${text}')">${text} <span class="badge">${kind}</span></a>`;
+  }
+
+  function resultsToHtml(results) {
+    let items = [];
+    for (const kind of ["names", "organisations", "packages"]) {
+      if (results[kind]) {
+        if (results[kind].Right) {
+          results[kind].Right.map(text =>
+            items.push(createListItem(kind, text))
+          );
+        } else {
+          return results[kind].Left.map( err =>
+            items.push(
+              `<a href="#!" class="collection-item"><b style="color: darkred">${field} - ${err}</b></a>`
+            )
+          );
+        }
+      }
+    }
+    return `<div class="collection">${items.join("")}</div>`
+  }
+  webSocket.onmessage = (msgEvent) => {
+    console.log("message received");
+    let results = JSON.parse(msgEvent.data);
+    console.log(results);
+    searchOutput.innerHTML = resultsToHtml(results);
+  };
+  webSocket.onclose = (msgEvent) => {
+    console.log('disconnected');
+  };
+  webSocket.onerror = (msgEvent) => {
+    console.log('there\'s an error');
+  };
+
+
+  itemInput.addEventListener("input", (e) => {
+    searchOutput.innerHTML = workingTemplate.innerHTML;
+    window.clearTimeout(window.autocompleteId);
+    window.autocompleteId = window.setTimeout(
+      function() { inputTextChanged(e.target.value);},
+      500
+    );
+  });
+
+  function inputTextChanged(text) {
+    if (text.length > 5) {
+      console.log(`Sending: ${text}`);
+      webSocket.send(text);
+    }
+  }
+
+
+
+</script>
+</body>
+</html>
+

@@ -1,15 +1,17 @@
-package com.iceservices.dependalyzer
+package com.iceservices.dependalyzer.neo
 
+import com.iceservices.dependalyzer.neo.PersistenceService
+import com.iceservices.dependalyzer.models.*
+import com.iceservices.dependalyzer.neo.NeoCodec
+import com.iceservices.dependalyzer.neo.NeoEnrichment.*
 import org.neo4j.graphdb.{GraphDatabaseService, Node, RelationshipType}
-import zio.{Task, ZIO, ZLayer}
 import zio.Console.*
-import NeoEnrichment.*
-import com.iceservices.dependalyzer.models.{DependsAdjacency, ElementId, ParentAdjacency, Persistable, Persisted, RelationshipStub}
+import zio.{Task, ZIO, ZLayer}
 
 class PersistenceService(neo: GraphDatabaseService):
-  def bulkUpsert[P <: Persistable](xs: Seq[P])(using codec: NeoCodec[P]): Task[Seq[Persisted[P]]] =
+  def bulkUpsert[P <: Persistable](xs: Seq[P]): Task[Seq[Persisted[P]]] =
     neo
-      .bulkUpsert(xs.map(codec.toStub))
+      .bulkUpsert(xs.map(_.toStub))
       .map(nodes => xs.zip(nodes.map(_.elementId)).map(Persisted.apply))
 
   def bulkUpsertDependencies(

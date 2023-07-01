@@ -1,13 +1,15 @@
 package com.iceservices.dependalyzer
 
+import com.iceservices.dependalyzer.coursiersupport.RepositorySet
 import org.neo4j.graphdb.GraphDatabaseService
 import zio.*
 import zio.Console.printLine
-import NeoEnrichment.*
-import com.iceservices.dependalyzer.models.{DependsAdjacency, Organisation, ParentAdjacency, Persisted, Rel, VersionedModule}
+import com.iceservices.dependalyzer.neo.{*, given}
+import com.iceservices.dependalyzer.neo.NeoEnrichment.*
+import com.iceservices.dependalyzer.models.*
 import coursier.core.Configuration
 
-class BizLogicService(dataService: PersistenceService):
+class BizLogicService(dataService: PersistenceService, repositorySetRef: Ref[RepositorySet]):
   val defaultConfig: Configuration = Configuration.defaultCompile
 
   val allConfigs: Seq[Configuration] = Seq(
@@ -35,7 +37,8 @@ class BizLogicService(dataService: PersistenceService):
       .foreach(allConfigs) { config =>
         for {
           _ <- ZIO.debug(s"resolving $config")
-          resolution <- DependencyResolver.resolve(sought, config)
+          repositorySet <- repositorySetRef.get
+          resolution <- DependencyResolver.resolve(repositorySet, sought, config)
           _ <- ZIO.foreach(resolution.dependencyAdjacencySet)(ZIO.debug(_))
         } yield ()
       }
@@ -53,7 +56,10 @@ class BizLogicService(dataService: PersistenceService):
 
   def resolveAndPersist(sought: VersionedModule): Task[Set[Persisted[VersionedModule]]] =
     for {
-      resolutions <- ZIO.foreach(importantConfigs)(DependencyResolver.resolve(sought, _))
+      repositorySet <- repositorySetRef.get
+      resolutions <- ZIO.foreach(importantConfigs)(
+        DependencyResolver.resolve(repositorySet, sought, _)
+      )
       _ <- ZIO.debug("upserting modules")
       persistedModules <- dataService.bulkUpsert(resolutions.flatMap(_.allKnownModules))
       _ <- ZIO.debug("upserting deps")
@@ -64,6 +70,5 @@ class BizLogicService(dataService: PersistenceService):
       _ <- dataService.bulkUpsertParentage(resolutions.flatMap(_.parentageAdjacencySet).toSeq)
     } yield persistedModules.toSet
 
-
 object BizLogicService:
-  val live = ZLayer.fromFunction(new BizLogicService(_))
+  val live = ZLayer.fromFunction(new BizLogicService(_, _))

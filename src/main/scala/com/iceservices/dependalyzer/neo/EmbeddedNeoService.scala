@@ -1,4 +1,4 @@
-package com.iceservices.dependalyzer
+package com.iceservices.dependalyzer.neo
 
 import org.neo4j.configuration.connectors.BoltConnector
 import org.neo4j.configuration.helpers.SocketAddress
